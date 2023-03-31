@@ -24,11 +24,13 @@ export default {
     {
       file: resolveFile(Package.main),
       format: 'cjs',
+      exports: "auto",
       sourcemap: true
     },
     {
       file: resolveFile(Package.module),
       format: 'es',
+      exports: "auto",
       sourcemap: true
     },
     {
@@ -60,14 +62,17 @@ export default {
     RollupCopy({
       targets: [
         {
-          src: resolveFile('src/styles'),
-          dest: resolveFile('dist')
+          src: 'src/styles',
+          dest: 'dist'
         },
         {
-          src: resolveFile('docs/README.md'),
-          dest: resolveFile('.')
+          src: 'docs/README.md',
+          dest: '.'
         }
-      ]
-    })
+      ],
+      flatten: false,
+      hook: 'buildStart',
+      verbose: true // 在终端进行console.log
+    }),
   ]
 }

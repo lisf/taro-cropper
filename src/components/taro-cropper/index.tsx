@@ -1,7 +1,10 @@
-import Taro, {CanvasContext, getImageInfo, getSystemInfoSync} from '@tarojs/taro';
-import React, {PureComponent, CSSProperties} from 'react';
-import {BaseEventOrig, Canvas, CoverView, View} from '@tarojs/components';
+// import Taro, {CanvasContext, getImageInfo, getSystemInfoSync} from '@tarojs/taro';
+import Taro, {Canvas as Cvs} from '@tarojs/taro';
+import React, {PureComponent, CSSProperties, Fragment} from 'react';
+// import {BaseEventOrig, Canvas, CoverView, View} from '@tarojs/components';
+import {BaseEventOrig, Canvas, View} from '@tarojs/components';
 import {easySetFillStyle, easySetLineWidth, easySetStrokeStyle} from "./canvas-util";
+// import {easySetLineWidth, easySetStrokeStyle} from "./canvas-util";
 
 interface TaroCropperComponentProps {
   cropperCanvasId: string,          // 画布id
@@ -59,7 +62,7 @@ class TaroCropperComponent extends PureComponent<TaroCropperComponentProps, Taro
     },
   };
 
-  systemInfo: getSystemInfoSync.Result;
+  systemInfo: any;
 
   constructor(props) {
     super(props);
@@ -75,8 +78,10 @@ class TaroCropperComponent extends PureComponent<TaroCropperComponentProps, Taro
     }
   }
 
-  cropperCanvasContext: CanvasContext;
-  cropperCutCanvasContext: CanvasContext;
+  cropperCanvas: Cvs;
+  cropperCutCanvas: Cvs;
+  cropperCanvasContext: any;
+  cropperCutCanvasContext: any;
   imageLeft: number = 0;
   imageTop: number = 0;
   imageLeftOrigin: number = 0;
@@ -85,12 +90,13 @@ class TaroCropperComponent extends PureComponent<TaroCropperComponentProps, Taro
   height: number = 0;
   cropperWidth: number = 0;
   cropperHeight: number = 0;
-  imageInfo: getImageInfo.SuccessCallbackResult;
+  imageInfo: any;
   realImageWidth: number = 0;
   realImageHeight: number = 0;
   scaleImageWidth: number = 0;
   scaleImageHeight: number = 0;
   image: HTMLImageElement;
+  imageToDraw: Taro.Image;
 
   /**
    * 根据props更新长等信息
@@ -113,7 +119,7 @@ class TaroCropperComponent extends PureComponent<TaroCropperComponentProps, Taro
     return Taro.getImageInfo({
       src: src
     })
-      .then((res: getImageInfo.SuccessCallbackResult) => {
+      .then((res: any) => {
         this.imageInfo = res;
         const imageWidth = res.width;
         const imageHeight = res.height;
@@ -150,20 +156,60 @@ class TaroCropperComponent extends PureComponent<TaroCropperComponentProps, Taro
   componentDidMount(): void {
     const {
       cropperCanvasId,
-      cropperCutCanvasId
+      cropperCutCanvasId,
+      cropperWidth,
+      cropperHeight,
+      width,
+      height,
+      fullScreen,
     } = this.props;
-    const initCanvas = () => {
-      this.cropperCanvasContext = Taro.createCanvasContext(cropperCanvasId, this);
-      this.cropperCutCanvasContext = Taro.createCanvasContext(cropperCutCanvasId, this);
+    
+    const loadImage = (): Promise<Taro.Image> => {
+      const src = process.env.TARO_ENV === 'h5' ? this.image : this.imageInfo.path;
+      return new Promise((resolve) => {
+        const image = this.cropperCanvas.createImage();
+        image.onload = () => resolve(image);
+        image.src = src;
+      });
+    };
 
-      this.updateInfo(this.props)
-        .then(() => {
+    const initCanvas = () => {
+      Taro.nextTick(() => {
+        // 使用 Taro.nextTick 模拟 setData 已结束，节点已完成渲染
+        Taro.createSelectorQuery()
+        .selectAll(`#${cropperCanvasId},#${cropperCutCanvasId}`)
+        .node(async (res) => {
+
+          const cropperRes = res[1];
+          const cropperCutRes = res[0];
+
+          this.cropperCanvas = cropperRes.node;
+          this.cropperCutCanvas = cropperCutRes.node;
+
+          // Canvas 绘制上下文
+          this.cropperCanvasContext = this.cropperCanvas.getContext('2d');
+          this.cropperCutCanvasContext = this.cropperCutCanvas.getContext('2d');
+
+          // 初始化画布大小
+          // const dprRel = this.systemInfo.pixelRatio;
+          const dprRel = 750 / this.systemInfo.windowWidth;
+          // Canvas 画布的实际绘制宽高
+          this.cropperCanvas.width = (fullScreen ? this.systemInfo.windowWidth : width) * dprRel
+          this.cropperCanvas.height = (fullScreen ? this.systemInfo.windowHeight : height) * dprRel
+          this.cropperCanvasContext.scale(dprRel, dprRel)
+
+          this.cropperCutCanvas.width = cropperWidth * dprRel
+          this.cropperCutCanvas.height = cropperHeight * dprRel
+          this.cropperCutCanvasContext.scale(dprRel, dprRel)
+
+          await this.updateInfo(this.props);
+          this.imageToDraw = await loadImage();
           this.update();
         })
-        .catch(() => {
-          this.update();
+        .exec();
         });
     };
+
     if (process.env.TARO_ENV == 'h5') {
       setTimeout(() => {
         initCanvas();
@@ -225,7 +271,7 @@ class TaroCropperComponent extends PureComponent<TaroCropperComponentProps, Taro
   /**
    * 绘制裁剪框区域的图片
    * @param props
-   * @param src               待绘制的图片路径
+   * @param image             待绘制的图片对象
    * @param deviationX        图片绘制x向偏移
    * @param deviationY        图片绘制y向偏移
    * @param imageWidth        图片的原始宽度
@@ -237,7 +283,7 @@ class TaroCropperComponent extends PureComponent<TaroCropperComponentProps, Taro
    */
   _drawCropperContent(
     // props: TaroCropperComponentProps,
-    src: string | HTMLImageElement,
+    image: Taro.Image,
     deviationX: number,
     deviationY: number,
     imageWidth: number,
@@ -252,27 +298,44 @@ class TaroCropperComponent extends PureComponent<TaroCropperComponentProps, Taro
     const cropperImageY = (cropperStartY - deviationY) / drawHeight * imageHeight;
     const cropperImageWidth = this.cropperWidth / drawWidth * imageWidth;
     const cropperImageHeight = this.cropperHeight / drawHeight * imageHeight;
+
     // 绘制裁剪框内裁剪的图片
-    // @ts-ignore
-    this.cropperCanvasContext.drawImage(src, cropperImageX, cropperImageY, cropperImageWidth, cropperImageHeight,
-      cropperStartX, cropperStartY, this.cropperWidth, this.cropperHeight);
-    // @ts-ignore
-    this.cropperCutCanvasContext.drawImage(src, cropperImageX, cropperImageY, cropperImageWidth, cropperImageHeight,
-      0, 0, this.cropperWidth, this.cropperHeight);
+    // console.info('💢felix => update => content drawImage', {cropperImageX, cropperImageY, cropperImageWidth, cropperImageHeight,
+    //   cropperStartX, cropperStartY, cropperWidth: this.cropperWidth, cropperHeight: this.cropperHeight})
+
+    this.cropperCanvasContext.drawImage(image,
+      cropperImageX, cropperImageY, cropperImageWidth, cropperImageHeight,
+      cropperStartX, cropperStartY, this.cropperWidth, this.cropperHeight
+    )
+    this.cropperCutCanvasContext.drawImage(image,
+      cropperImageX, cropperImageY, cropperImageWidth, cropperImageHeight,
+      0, 0, this.cropperWidth, this.cropperHeight
+    )
   }
 
   update() {
-    if (!this.imageInfo) {            // 图片资源无效则不执行更新操作
+    
+    if (!this.cropperCanvasContext || !this.cropperCutCanvasContext) {
+      return;
+    }
+    
+    // 绘制前清空画布
+    this.cropperCanvasContext.clearRect(0, 0, this.cropperCanvas.width + 1, this.cropperCanvas.height + 1)
+    this.cropperCutCanvasContext.clearRect(0, 0, this.cropperCutCanvas.width + 1, this.cropperCutCanvas.height + 1)
+
+    if (!this.imageInfo || !this.imageToDraw) {            // 图片资源无效则不执行更新操作
       this._drawCropperCorner();
-      this.cropperCanvasContext.draw();
       return;
     }
 
-    const src = process.env.TARO_ENV === 'h5' ? this.image : this.imageInfo.path;
+    // console.info('💢felix => update => CCC drawImage', 
+    // {imageLeft: this.imageLeft, imageTop: this.imageTop, scaleImageWidth: this.scaleImageWidth, scaleImageHeight: this.scaleImageHeight})
 
-    // @ts-ignore
-    this.cropperCanvasContext.drawImage(src, 0, 0, this.imageInfo.width, this.imageInfo.height,
-      this.imageLeft, this.imageTop, this.scaleImageWidth, this.scaleImageHeight);
+    this.cropperCanvasContext.drawImage(this.imageToDraw,
+      0, 0, this.imageInfo.width, this.imageInfo.height,
+      this.imageLeft, this.imageTop, this.scaleImageWidth, this.scaleImageHeight
+    )
+
     // 绘制半透明层
     this.cropperCanvasContext.beginPath();
     easySetFillStyle(this.systemInfo, this.cropperCanvasContext, 'rgba(0, 0, 0, 0.3)');
@@ -280,10 +343,8 @@ class TaroCropperComponent extends PureComponent<TaroCropperComponentProps, Taro
     this.cropperCanvasContext.fill();
 
     // 绘制裁剪框内部的区域
-    this._drawCropperContent(src, this.imageLeft, this.imageTop,
+    this._drawCropperContent(this.imageToDraw, this.imageLeft, this.imageTop,
       this.imageInfo.width, this.imageInfo.height, this.scaleImageWidth, this.scaleImageHeight);
-    this.cropperCanvasContext.draw(false);
-    this.cropperCutCanvasContext.draw(false);
   }
 
   /**
@@ -293,6 +354,8 @@ class TaroCropperComponent extends PureComponent<TaroCropperComponentProps, Taro
    */
   componentWillReceiveProps(nextProps: Readonly<TaroCropperComponentProps>, nextContext: any): void {
     if (JSON.stringify(nextProps) != JSON.stringify(this.props)) {
+      // console.log('💢felix => componentWillReceiveProps => this.props', JSON.stringify(this.props));
+      // console.log('💢felix => componentWillReceiveProps => nextProps', JSON.stringify(nextProps));
       this.updateInfo(nextProps)
         .then(() => {
           this.update();
@@ -451,18 +514,17 @@ class TaroCropperComponent extends PureComponent<TaroCropperComponentProps, Taro
     filePath: string,
   }> {
     const {
-      cropperCutCanvasId,
       fileType,
       quality
     } = this.props;
     return new Promise((resolve, reject) => {
       // const scope = process.env.TARO_ENV === 'h5' ? this : getCurrentInstance().page;
       Taro.canvasToTempFilePath({
-        canvasId: cropperCutCanvasId,
+        canvas: this.cropperCutCanvas,
         x: 0,
         y: 0,
-        width: this.cropperWidth - 2,
-        height: this.cropperHeight - 2,
+        width: this._getRealPx(this.cropperWidth) - 2,
+        height: this._getRealPx(this.cropperHeight) - 2,
         destWidth: this.cropperWidth * this.systemInfo.pixelRatio,
         destHeight: this.cropperHeight * this.systemInfo.pixelRatio,
         fileType: fileType,
@@ -545,13 +607,7 @@ class TaroCropperComponent extends PureComponent<TaroCropperComponentProps, Taro
 
     if (!hideFinishText) {
       const finishStyle: CSSProperties = {
-        position: 'absolute',
-        display: 'inline-block',
         color: themeColor,
-        textAlign: "right",
-        fontSize: Taro.pxTransform(32, 750),
-        bottom: Taro.pxTransform(30, 750),
-        right: Taro.pxTransform(30, 750),
       };
       const onFinishClick = () => {
         this.cut()
@@ -563,12 +619,13 @@ class TaroCropperComponent extends PureComponent<TaroCropperComponentProps, Taro
           })
       };
       // if (!isH5) {
-      finish = <CoverView
+      finish = <View
+        className='btn finish'
         style={finishStyle}
-        onClick={onFinishClick}
+        onTap={onFinishClick}
       >
-        {finishText}
-      </CoverView>
+        {finishText || '确认'}
+      </View>
       // } else {
       //   finish = <View
       //     style={finishStyle}
@@ -581,48 +638,58 @@ class TaroCropperComponent extends PureComponent<TaroCropperComponentProps, Taro
 
     if (!hideCancelText) {
       const cancelStyle: CSSProperties = {
-        position: 'absolute',
-        display: 'inline-block',
         color: themeColor,
-        textAlign: "left",
-        fontSize: Taro.pxTransform(32, 750),
-        bottom: Taro.pxTransform(30, 750),
-        left: Taro.pxTransform(30, 750),
       };
-      cancel = <CoverView
+      cancel = <View
+        className='btn cancel'
         style={cancelStyle}
-        onClick={onCancel}
+        onTap={onCancel}
       >
         {cancelText}
-      </CoverView>
+      </View>
     }
     return (
-      <View className={`taro-cropper ${isFullScreenCss ? 'taro-cropper-fullscreen' : ''}`} style={cropperStyle}>
-        <Canvas
-          canvasId={cropperCutCanvasId}
-          style={cutCanvasStyle}
-          className={`cut-canvas-item ${isFullScreenCss ? 'cut-canvas-fullscreen' : ''}`}
-        />
-        <Canvas
-          onTouchStart={this.handleOnTouchStart}
-          onTouchMove={this.handleOnTouchMove}
-          onTouchEnd={this.handleOnTouchEnd}
-          canvasId={cropperCanvasId}
-          style={canvasStyle}
-          className={`canvas-item ${isFullScreenCss ? 'canvas-fullscreen' : ''}`}
-          disableScroll
-        >
-        </Canvas>
-        {
-          !hideFinishText &&
-          finish
-        }
-        {
-          !hideCancelText &&
-          cancel
-        }
-      </View>
-
+      <Fragment>
+        <View className={`taro-cropper ${isFullScreenCss ? 'taro-cropper-fullscreen' : ''}`} style={cropperStyle}>
+          <Canvas
+            type='2d'
+            id={cropperCutCanvasId}
+            style={cutCanvasStyle}
+            className={`cut-canvas-item ${isFullScreenCss ? 'cut-canvas-fullscreen' : ''}`}
+          />
+          <Canvas
+            type='2d'
+            id={cropperCanvasId}
+            onTouchStart={this.handleOnTouchStart}
+            onTouchMove={this.handleOnTouchMove}
+            onTouchEnd={this.handleOnTouchEnd}
+            style={canvasStyle}
+            className={`canvas-item ${isFullScreenCss ? 'canvas-fullscreen' : ''}`}
+            disableScroll
+          >
+          </Canvas>
+            {/* {
+              !hideCancelText &&
+              cancel
+            }
+            {
+              !hideFinishText &&
+              finish
+            } */}
+        </View>
+        <View className='bottom-wapper'>
+          <View className='bottom-area'>
+            {
+              !hideCancelText &&
+              cancel
+            }
+            {
+              !hideFinishText &&
+              finish
+            }
+          </View>
+        </View>
+      </Fragment>
     );
   }
 }
