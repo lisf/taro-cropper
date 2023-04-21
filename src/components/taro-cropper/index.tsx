@@ -50,9 +50,9 @@ class TaroCropperComponent extends PureComponent<TaroCropperComponentProps, Taro
     fullScreenCss: false,
     hideFinishText: false,
     hideCancelText: true,
-    finishText: '完成',
-    cancelText: '取消',
-    fileType: 'jpg',
+    finishText: '保存',
+    cancelText: '返回',
+    fileType: 'png',
     quality: 1,
     onCancel: () => {
     },
@@ -179,6 +179,7 @@ class TaroCropperComponent extends PureComponent<TaroCropperComponentProps, Taro
         Taro.createSelectorQuery()
         .selectAll(`#${cropperCanvasId},#${cropperCutCanvasId}`)
         .node(async (res) => {
+          console.log('💢felix => TaroCropperComponent => .node => res:', res[0], res[1]);
 
           const cropperRes = res[1];
           const cropperCutRes = res[0];
@@ -193,6 +194,7 @@ class TaroCropperComponent extends PureComponent<TaroCropperComponentProps, Taro
           // 初始化画布大小
           // const dprRel = this.systemInfo.pixelRatio;
           const dprRel = 750 / this.systemInfo.windowWidth;
+          console.log('💢felix => initCanvas => dprRel:', dprRel);
           // Canvas 画布的实际绘制宽高
           this.cropperCanvas.width = (fullScreen ? this.systemInfo.windowWidth : width) * dprRel
           this.cropperCanvas.height = (fullScreen ? this.systemInfo.windowHeight : height) * dprRel
@@ -290,7 +292,7 @@ class TaroCropperComponent extends PureComponent<TaroCropperComponentProps, Taro
     imageHeight: number,
     drawWidth: number,
     drawHeight: number) {
-    this._drawCropperCorner();
+    // this._drawCropperCorner();
     const cropperStartX = (this.width - this.cropperWidth) / 2;
     const cropperStartY = (this.height - this.cropperHeight) / 2;
 
@@ -299,17 +301,20 @@ class TaroCropperComponent extends PureComponent<TaroCropperComponentProps, Taro
     const cropperImageWidth = this.cropperWidth / drawWidth * imageWidth;
     const cropperImageHeight = this.cropperHeight / drawHeight * imageHeight;
 
-    // 绘制裁剪框内裁剪的图片
-    // console.info('💢felix => update => content drawImage', {cropperImageX, cropperImageY, cropperImageWidth, cropperImageHeight,
-    //   cropperStartX, cropperStartY, cropperWidth: this.cropperWidth, cropperHeight: this.cropperHeight})
-
+    console.info('💢felix => update => 绘制拖拽中裁剪区域', {cropperImageX, cropperImageY, cropperImageWidth, cropperImageHeight,
+      cropperStartX, cropperStartY, cropperWidth: this.cropperWidth, cropperHeight: this.cropperHeight})
     this.cropperCanvasContext.drawImage(image,
       cropperImageX, cropperImageY, cropperImageWidth, cropperImageHeight,
       cropperStartX, cropperStartY, this.cropperWidth, this.cropperHeight
     )
+    const dprRel = 750 / this.systemInfo.windowWidth;
+    // 绘制裁剪框内裁剪的图片
+    console.info('💢felix => update => 绘制裁剪区域', {cropperImageX, cropperImageY, cropperImageWidth, cropperImageHeight,
+      cropperWidth_Real: this.cropperWidth*dprRel, cropperHeight_Real: this.cropperHeight*dprRel, cropperWidth: this.cropperWidth, cropperHeight: this.cropperHeight})
     this.cropperCutCanvasContext.drawImage(image,
       cropperImageX, cropperImageY, cropperImageWidth, cropperImageHeight,
-      0, 0, this.cropperWidth, this.cropperHeight
+      0, 0, this.cropperWidth*dprRel, this.cropperHeight*dprRel
+      // 0, 0, this.cropperWidth, this.cropperHeight
     )
   }
 
@@ -324,13 +329,14 @@ class TaroCropperComponent extends PureComponent<TaroCropperComponentProps, Taro
     this.cropperCutCanvasContext.clearRect(0, 0, this.cropperCutCanvas.width + 1, this.cropperCutCanvas.height + 1)
 
     if (!this.imageInfo || !this.imageToDraw) {            // 图片资源无效则不执行更新操作
-      this._drawCropperCorner();
+      // this._drawCropperCorner();
       return;
     }
 
-    // console.info('💢felix => update => CCC drawImage', 
-    // {imageLeft: this.imageLeft, imageTop: this.imageTop, scaleImageWidth: this.scaleImageWidth, scaleImageHeight: this.scaleImageHeight})
-
+    console.info('💢felix => update => 绘制 imageInfo', this.imageInfo); 
+    console.info('💢felix => update => 绘制 drawImage', 
+    {imageLeft: this.imageLeft, imageTop: this.imageTop, scaleImageWidth: this.scaleImageWidth, scaleImageHeight: this.scaleImageHeight})
+    // 绘制背景图
     this.cropperCanvasContext.drawImage(this.imageToDraw,
       0, 0, this.imageInfo.width, this.imageInfo.height,
       this.imageLeft, this.imageTop, this.scaleImageWidth, this.scaleImageHeight
@@ -371,10 +377,18 @@ class TaroCropperComponent extends PureComponent<TaroCropperComponentProps, Taro
    * @private
    */
   _outsideBound(imageLeft: number, imageTop: number) {
+    // console.warn('💢felix => _outsideBound => imagePosition:', imageLeft, imageTop);
+    // const limitLeft = (this.width - this.cropperWidth) / 2 + this.cropperWidth - 50;
+    // const limitTop = (this.height - this.cropperHeight) / 2 + this.cropperHeight - 50;
+
+    // 图片缩放后是否在裁剪范围内
+    const isZoomIn = this.cropperWidth - this.scaleImageWidth >= 0;
+    // console.warn('💢felix => _outsideBound => isZoomIn:', isZoomIn);
+
     this.imageLeft =
-      imageLeft > (this.width - this.cropperWidth) / 2
+      imageLeft >= (this.width - this.cropperWidth) / 2 || isZoomIn
         ?
-        (this.width - this.cropperWidth) / 2
+        imageLeft
         :
         (
           (imageLeft + this.scaleImageWidth) >= (this.width + this.cropperWidth) / 2
@@ -383,10 +397,12 @@ class TaroCropperComponent extends PureComponent<TaroCropperComponentProps, Taro
             :
             (this.width + this.cropperWidth) / 2 - this.scaleImageWidth
         );
+    
+    
     this.imageTop =
-      imageTop > (this.height - this.cropperHeight) / 2
+      imageTop > (this.height - this.cropperHeight) / 2 || isZoomIn
         ?
-        (this.height - this.cropperHeight) / 2
+        imageTop
         :
         (
           (imageTop + this.scaleImageHeight) >= (this.height + this.cropperHeight) / 2
@@ -396,6 +412,32 @@ class TaroCropperComponent extends PureComponent<TaroCropperComponentProps, Taro
             (this.height + this.cropperHeight) / 2 - this.scaleImageHeight
         )
   }
+  // _outsideBound(imageLeft: number, imageTop: number) {
+  //   this.imageLeft =
+  //     imageLeft > (this.width - this.cropperWidth) / 2
+  //       ?
+  //       (this.width - this.cropperWidth) / 2
+  //       :
+  //       (
+  //         (imageLeft + this.scaleImageWidth) >= (this.width + this.cropperWidth) / 2
+  //           ?
+  //           imageLeft
+  //           :
+  //           (this.width + this.cropperWidth) / 2 - this.scaleImageWidth
+  //       );
+  //   this.imageTop =
+  //     imageTop > (this.height - this.cropperHeight) / 2
+  //       ?
+  //       (this.height - this.cropperHeight) / 2
+  //       :
+  //       (
+  //         (imageTop + this.scaleImageHeight) >= (this.height + this.cropperHeight) / 2
+  //           ?
+  //           imageTop
+  //           :
+  //           (this.height + this.cropperHeight) / 2 - this.scaleImageHeight
+  //       )
+  // }
 
   touch0X = 0;
   touch0Y = 0;
@@ -424,6 +466,8 @@ class TaroCropperComponent extends PureComponent<TaroCropperComponentProps, Taro
     const xMove = touch.x - this.touch0X;
     const yMove = touch.y - this.touch0Y;
     this._outsideBound(this.imageLeftOrigin + xMove, this.imageTopOrigin + yMove);
+    // this.imageLeft = this.imageLeftOrigin + xMove;
+    // this.imageTop = this.imageTopOrigin + yMove;
     this.update();
   }
 
@@ -435,17 +479,17 @@ class TaroCropperComponent extends PureComponent<TaroCropperComponentProps, Taro
   }
 
   _twoTouchMove(touch0: any, touch1: any) {
-    const {
-      maxScale
-    } = this.props;
-    const realMaxScale = maxScale >= 1 ? maxScale : 1;
+    // const {
+    //   maxScale
+    // } = this.props;
+    // const realMaxScale = maxScale >= 1 ? maxScale : 1;
     const oldScale = this.oldScale;
     const oldDistance = this.oldDistance;
     this.newScale = this._getNewScale(oldScale, oldDistance, touch0, touch1);
 
     // 限制缩放
-    this.newScale <= 1 && (this.newScale = 1);
-    this.newScale > realMaxScale && (this.newScale = realMaxScale);
+    // this.newScale <= 1 && (this.newScale = 1);
+    // this.newScale > realMaxScale && (this.newScale = realMaxScale);
 
     this.scaleImageWidth = this.realImageWidth * this.newScale;
     this.scaleImageHeight = this.realImageHeight * this.newScale;
@@ -453,6 +497,8 @@ class TaroCropperComponent extends PureComponent<TaroCropperComponentProps, Taro
     const imageTop = this.imageTopOrigin - (this.scaleImageHeight - this.lastScaleImageHeight) / 2;
 
     this._outsideBound(imageLeft, imageTop);
+    // this.imageLeft = imageLeft;
+    // this.imageTop = imageTop;
 
     this.update();
   }
@@ -523,8 +569,8 @@ class TaroCropperComponent extends PureComponent<TaroCropperComponentProps, Taro
         canvas: this.cropperCutCanvas,
         x: 0,
         y: 0,
-        width: this._getRealPx(this.cropperWidth) - 2,
-        height: this._getRealPx(this.cropperHeight) - 2,
+        width: this.cropperWidth,
+        height: this.cropperHeight,
         destWidth: this.cropperWidth * this.systemInfo.pixelRatio,
         destHeight: this.cropperHeight * this.systemInfo.pixelRatio,
         fileType: fileType,
@@ -588,7 +634,7 @@ class TaroCropperComponent extends PureComponent<TaroCropperComponentProps, Taro
     }
 
     const canvasStyle: CSSProperties = {
-      background: 'rgba(0, 0, 0, 0.8)',
+      background: '#4E5969',
       position: 'relative',
       width: `${_width}px`,
       height: `${_height}px`
@@ -599,6 +645,7 @@ class TaroCropperComponent extends PureComponent<TaroCropperComponentProps, Taro
       top: `${(_height - _cropperHeight) / 2}px`,
       width: `${_cropperWidth}px`,
       height: `${_cropperHeight}px`,
+      // border: `solid 1px red`,
     };
 
     let finish: any = null;
@@ -624,7 +671,7 @@ class TaroCropperComponent extends PureComponent<TaroCropperComponentProps, Taro
         style={finishStyle}
         onTap={onFinishClick}
       >
-        {finishText || '确认'}
+        {finishText}
       </View>
       // } else {
       //   finish = <View
@@ -648,6 +695,43 @@ class TaroCropperComponent extends PureComponent<TaroCropperComponentProps, Taro
         {cancelText}
       </View>
     }
+
+    const maskStyle: CSSProperties = {
+      pointerEvents: 'none',
+      position: 'absolute',
+      left: 0,
+      top: `${(_height - _width) / 2}px`,
+      width: `${_width}px`,
+      height: `${_width}px`,
+      zIndex: 9,
+      backgroundColor: 'transparent',
+      display: 'flex',
+      flexDirection: 'column',
+    }
+    const maskRowStyle: CSSProperties = {
+      flex: 1,
+      display: 'flex',
+    }
+    const maskCellStyle: CSSProperties = {
+      flex: 1,
+      border: 'dashed 1px #FFFFFF',
+    }
+    
+    const tipsStyle: CSSProperties = {
+      margin: '8px 16px',
+      border: 'dashed 1.5px #00B87B',
+      borderRadius: '4px',
+      backgroundColor: '#E8FFF4',
+      height: '38px',
+      lineHeight: '22px',
+      fontSize: '16px',
+      fontWeight: 600,
+      color: '#00B87B',
+      display: 'flex',
+      justifyContent: 'center',
+      alignItems: 'center',
+    }
+
     return (
       <Fragment>
         <View className={`taro-cropper ${isFullScreenCss ? 'taro-cropper-fullscreen' : ''}`} style={cropperStyle}>
@@ -666,8 +750,7 @@ class TaroCropperComponent extends PureComponent<TaroCropperComponentProps, Taro
             style={canvasStyle}
             className={`canvas-item ${isFullScreenCss ? 'canvas-fullscreen' : ''}`}
             disableScroll
-          >
-          </Canvas>
+          />
             {/* {
               !hideCancelText &&
               cancel
@@ -677,16 +760,38 @@ class TaroCropperComponent extends PureComponent<TaroCropperComponentProps, Taro
               finish
             } */}
         </View>
+        <View className='cropper-mask' style={maskStyle}>
+          <View className='row' style={maskRowStyle}>
+            <View style={maskCellStyle}></View>
+            <View style={maskCellStyle}></View>
+            <View style={maskCellStyle}></View>
+          </View>
+          <View className='row' style={maskRowStyle}>
+          <View style={maskCellStyle}></View>
+            <View style={maskCellStyle}></View>
+            <View style={maskCellStyle}></View>
+          </View>
+          <View className='row' style={maskRowStyle}>
+          <View style={maskCellStyle}></View>
+            <View style={maskCellStyle}></View>
+            <View style={maskCellStyle}></View>
+          </View>
+        </View>
         <View className='bottom-wapper'>
+          <View className='tips-box' style={tipsStyle}>
+            双指缩放或移动图片可裁剪
+          </View>
           <View className='bottom-area'>
-            {
-              !hideCancelText &&
-              cancel
-            }
-            {
-              !hideFinishText &&
-              finish
-            }
+            <View className='btn-box'>
+              {
+                !hideCancelText &&
+                cancel
+              }
+              {
+                !hideFinishText &&
+                finish
+              }
+            </View>
           </View>
         </View>
       </Fragment>

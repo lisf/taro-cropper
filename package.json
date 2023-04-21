@@ -1,6 +1,6 @@
 {
   "name": "@felix.lsf/taro-cropper",
-  "version": "1.2.9",
+  "version": "1.3.0",
   "private": false,
   "description": "Taro框架下的图片裁剪组件封装，开箱即用",
   "browser": "dist/index.umd.js",
